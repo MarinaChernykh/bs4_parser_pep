@@ -1,20 +1,21 @@
 import logging
 
-from requests import RequestException
+from bs4 import BeautifulSoup
+
 from exceptions import ParserFindTagException
+
+
+def get_soup(session, url):
+    """Создает DOM-дерево."""
+    response = get_response(session, url)
+    return BeautifulSoup(response.text, 'lxml')
 
 
 def get_response(session, url):
     """Отправляет get запрос на url и возвращает ответ."""
-    try:
-        response = session.get(url)
-        response.encoding = 'utf-8'
-        return response
-    except RequestException:
-        logging.exception(
-            f'Возникла ошибка при загрузке страницы {url}',
-            stack_info=True
-        )
+    response = session.get(url)
+    response.encoding = 'utf-8'
+    return response
 
 
 def find_tag(soup, tag, attrs=None):

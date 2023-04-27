@@ -3,13 +3,14 @@ import logging
 from urllib.parse import urljoin
 
 import requests_cache
-from bs4 import BeautifulSoup
+from requests import RequestException
 from tqdm import tqdm
 
-from constants import BASE_DIR, MAIN_DOC_URL, PEPS_URL, EXPECTED_STATUS
+from constants import (BASE_DIR, DOWNLOADS_DIR, MAIN_DOC_URL, WHATS_NEW_URL,
+                       DOWNLOADS_URL, PEPS_URL, EXPECTED_STATUS)
 from configs import configure_argument_parser, configure_logging
 from outputs import control_output
-from utils import get_response, find_tag
+from utils import get_soup, get_response, find_tag
 
 
 def whats_new(session):
@@ -18,25 +19,29 @@ def whats_new(session):
     (статьи Whats New In Python на docs.python.org)
     и формирует список с ссылкой на статью, заголовком, автором.
     """
-    whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
-    response = get_response(session, whats_new_url)
-    if response is None:
+    try:
+        soup = get_soup(session, WHATS_NEW_URL)
+    except RequestException:
+        logging.exception(
+            f'Возникла ошибка при загрузке страницы {WHATS_NEW_URL}',
+            stack_info=True
+        )
         return
-    soup = BeautifulSoup(response.text, 'lxml')
-    main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
-    div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
-    sections_by_python = div_with_ul.find_all(
-        'li', attrs={'class': 'toctree-l1'})
+    sections_by_python = soup.select(
+        '#what-s-new-in-python div.toctree-wrapper li.toctree-l1'
+    )
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
-
     for section in tqdm(sections_by_python):
-        version_a_tag = find_tag(section, 'a')
-        href = version_a_tag['href']
-        version_link = urljoin(whats_new_url, href)
-        response = get_response(session, version_link)
-        if response is None:
+        version_href = find_tag(section, 'a')['href']
+        version_link = urljoin(WHATS_NEW_URL, version_href)
+        try:
+            soup = get_soup(session, version_link)
+        except RequestException:
+            logging.exception(
+                f'Возникла ошибка при загрузке страницы {version_link}',
+                stack_info=True
+            )
             continue
-        soup = BeautifulSoup(response.text, 'lxml')
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         dl_text = dl.text.replace('\n', ' ')
@@ -51,12 +56,15 @@ def latest_versions(session):
     Собирает данные о существующих версиях Python
     и их актуальном статусе.
     """
-    response = get_response(session, MAIN_DOC_URL)
-    if response is None:
+    try:
+        soup = get_soup(session, MAIN_DOC_URL)
+    except RequestException:
+        logging.exception(
+            f'Возникла ошибка при загрузке страницы {MAIN_DOC_URL}',
+            stack_info=True
+        )
         return
-    soup = BeautifulSoup(response.text, 'lxml')
-    sidebar = find_tag(soup, 'div', attrs={'class': 'sphinxsidebarwrapper'})
-    ul_tags = sidebar.find_all('ul')
+    ul_tags = soup.select('div.sphinxsidebarwrapper ul')
     for ul in ul_tags:
         if 'All versions' in ul.text:
             a_tags = ul.find_all('a')
@@ -83,24 +91,32 @@ def download(session):
     Скачивает с docs.python.org pdf-файл с документацией
     по наиболее свежей из актуальных версий Python.
     """
-    downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
-    response = get_response(session, downloads_url)
-    if response is None:
+    try:
+        soup = get_soup(session, DOWNLOADS_URL)
+    except RequestException:
+        logging.exception(
+            f'Возникла ошибка при загрузке страницы {DOWNLOADS_URL}',
+            stack_info=True
+        )
         return
-    soup = BeautifulSoup(response.text, 'lxml')
     main_tag = find_tag(soup, 'div', attrs={'role': 'main'})
     table_tag = find_tag(main_tag, 'table', attrs={'class': 'docutils'})
     pdf_a4_tag = find_tag(
         table_tag, 'a', attrs={'href': re.compile(r'.+pdf-a4\.zip$')}
     )
     pdf_a4_link = pdf_a4_tag['href']
-    archive_url = urljoin(downloads_url, pdf_a4_link)
+    archive_url = urljoin(DOWNLOADS_URL, pdf_a4_link)
     filename = archive_url.split('/')[-1]
-    downloads_dir = BASE_DIR / 'downloads'
+    downloads_dir = BASE_DIR / DOWNLOADS_DIR
     downloads_dir.mkdir(exist_ok=True)
     archive_path = downloads_dir / filename
-    response = get_response(session, archive_url)
-    if response is None:
+    try:
+        response = get_response(session, archive_url)
+    except RequestException:
+        logging.exception(
+            f'Возникла ошибка при загрузке страницы {archive_url}',
+            stack_info=True
+        )
         return
     with open(archive_path, 'wb') as file:
         file.write(response.content)
@@ -113,13 +129,15 @@ def pep(session):
     категории, кол-во PEP по каждой категории,
     общее кол-во стандартов.
     """
-    response = get_response(session, PEPS_URL)
-    if response is None:
+    try:
+        soup = get_soup(session, PEPS_URL)
+    except RequestException:
+        logging.exception(
+            f'Возникла ошибка при загрузке страницы {PEPS_URL}',
+            stack_info=True
+        )
         return
-    soup = BeautifulSoup(response.text, 'lxml')
-    peps_table = find_tag(soup, 'section', attrs={'id': 'numerical-index'})
-    peps_table_body = find_tag(peps_table, 'tbody')
-    peps_list = peps_table_body.find_all('tr')
+    peps_list = soup.select('#numerical-index tbody tr')
     total_peps_quantity = len(peps_list)
     results = [('Статус', 'Количество')]
     status_counter = {}
@@ -128,13 +146,16 @@ def pep(session):
     for pep in tqdm(peps_list):
         first_column_tag = find_tag(pep, 'abbr')
         preview_status = EXPECTED_STATUS[first_column_tag.text[1:]]
-        pep_a_tag = find_tag(pep, 'a')
-        href = pep_a_tag['href']
-        pep_link = urljoin(PEPS_URL, href)
-        response = get_response(session, pep_link)
-        if response is None:
+        pep_href = find_tag(pep, 'a')['href']
+        pep_link = urljoin(PEPS_URL, pep_href)
+        try:
+            soup = get_soup(session, pep_link)
+        except RequestException:
+            logging.exception(
+                f'Возникла ошибка при загрузке страницы {pep_link}',
+                stack_info=True
+            )
             continue
-        soup = BeautifulSoup(response.text, 'lxml')
         pep_info_table = find_tag(soup, 'dl')
         first_column_tags = pep_info_table.find_all('dt')
         real_status_tag = [
