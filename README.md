@@ -8,6 +8,26 @@
 
 Формат предоставления собранной информации: в консоли в строчном или табличном виде, а также в csv файле.
 
+## Технологии
+- beautifulsoup4 4.9.3
+
+## Как запустить проект
+1. Склонируйте репозиторий на локальный компьютер
+```
+git clone https://github.com/MarinaChernykh/yatube_django_project.git
+```
+2. Создайте и активируйте виртуальное окружение: 
+```
+python -m venv venv
+source venv/bin/activate
+```
+3. Установите зависимости из файла requirements.txt:
+```
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+4. Выберите нужный вам режим работы из указанных ниже и используйте соответствующую команду
+
 ## Режимы работы
 1. __whats-new__
 
@@ -67,3 +87,6 @@ python main.py pep -c --output pretty
 ```
 python main.py pep -h
 ```
+
+## Автор
+Марина Черных
